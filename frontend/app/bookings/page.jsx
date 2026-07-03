@@ -3,14 +3,18 @@ import { useContext, useState } from 'react';
 import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AuthContext } from '../../context/AuthContext';
-import { CalendarClock, CheckCircle, XCircle, History, Clock } from 'lucide-react';
+import { CalendarClock, CheckCircle, XCircle, History, Clock, MessageCircle } from 'lucide-react';
+import ChatWindow from '../../app/chat/ChatWindow'; 
 
 export default function BookingsPage() {
   const { user } = useContext(AuthContext);
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('active'); // 'active' or 'history'
 
-  // 100% Bulletproof ID extraction
+  //  CHAT STATES
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatPartner, setChatPartner] = useState(null);
+
   const myId = user?.id || user?._id;
 
   const { data: allBookings = [], isLoading } = useQuery({
@@ -36,7 +40,6 @@ export default function BookingsPage() {
 
   if (!user) return <div className="p-10 text-center text-xl font-bold">Please login to view bookings.</div>;
 
-  // Filter Bookings based on Tab
   const displayedBookings = allBookings.filter(b => {
     if (activeTab === 'active') {
       return b.status === 'Pending' || b.status === 'Accepted';
@@ -44,6 +47,21 @@ export default function BookingsPage() {
       return b.status === 'Completed' || b.status === 'Rejected' || b.status === 'Cancelled';
     }
   });
+
+  //  OPEN CHAT FUNCTION
+  const handleOpenChat = (providerObj, customerObj) => {
+    // Agar current user Provider hai, toh partner Customer hoga
+    // Agar current user Customer hai, toh partner Provider hoga
+    const isCurrentUserProvider = String(providerObj._id) === String(myId);
+    
+    if (isCurrentUserProvider) {
+      setChatPartner({ id: customerObj._id, name: customerObj.name });
+    } else {
+      setChatPartner({ id: providerObj._id, name: providerObj.name });
+    }
+    
+    setIsChatOpen(true);
+  };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -53,7 +71,7 @@ export default function BookingsPage() {
         </h1>
       </div>
 
-      {/* 🟢 TABS SYSTEM 🟢 */}
+      {/* TABS SYSTEM */}
       <div className="flex gap-4">
         <button 
           onClick={() => setActiveTab('active')} 
@@ -73,15 +91,12 @@ export default function BookingsPage() {
       {isLoading ? <p className="text-center p-10 animate-pulse text-gray-500">Loading your bookings...</p> : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
           {displayedBookings.map(b => {
-            
-            // 🟢 BULLETPROOF ID CHECK (Extract ID directly from object or string)
             const providerId = b.provider?._id || b.provider;
             const customerId = b.customer?._id || b.customer;
             
             const isProvider = String(providerId) === String(myId);
             const isCustomer = String(customerId) === String(myId);
             
-            // Badge Colors
             const badgeColor = 
               b.status === 'Accepted' ? 'bg-green-100 text-green-700' :
               b.status === 'Completed' ? 'bg-blue-100 text-blue-700' :
@@ -91,7 +106,6 @@ export default function BookingsPage() {
             return (
               <div key={b._id} className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border dark:border-gray-700 space-y-4 relative">
                 
-                {/* Status Badge */}
                 <span className={`absolute top-4 right-4 px-3 py-1 text-xs font-black uppercase rounded-full ${badgeColor}`}>
                   {b.status}
                 </span>
@@ -104,19 +118,24 @@ export default function BookingsPage() {
                 <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl flex flex-col gap-2 text-sm border dark:border-gray-700">
                   <p><span className="font-bold text-gray-500">Date & Time:</span> {b.preferredDate} at {b.preferredTime}</p>
                   
-                  {/* Dynamic Role Display */}
                   {isProvider ? (
-                    <p><span className="font-bold text-gray-500">Requested By:</span> {b.customer?.name} <span className="bg-blue-100 text-blue-700 text-[10px] px-2 rounded-full">Buyer</span></p>
+                    <p><span className="font-bold text-gray-500">Requested By:</span> {b.customer?.name}</p>
                   ) : (
-                    <p><span className="font-bold text-gray-500">Service Provider:</span> {b.provider?.name} <span className="bg-green-100 text-green-700 text-[10px] px-2 rounded-full">Seller</span></p>
+                    <p><span className="font-bold text-gray-500">Service Provider:</span> {b.provider?.name}</p>
                   )}
-
                   {b.notes && <p className="italic text-gray-600 dark:text-gray-400 mt-2">"{b.notes}"</p>}
                 </div>
 
-                {/* 🟢 ACTION BUTTONS (FIXED) 🟢 */}
                 <div className="flex gap-2 pt-2 border-t dark:border-gray-700">
                   
+                  {/* CHAT BUTTON (Dono ko show hoga)  */}
+                  <button 
+                    onClick={() => handleOpenChat(b.provider, b.customer)} 
+                    className="flex-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-2 rounded-lg font-bold text-sm hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition flex justify-center items-center gap-1"
+                  >
+                    <MessageCircle size={16}/> Chat
+                  </button>
+
                   {/* PROVIDER ACTIONS */}
                   {isProvider && b.status === 'Pending' && (
                     <>
@@ -125,22 +144,12 @@ export default function BookingsPage() {
                     </>
                   )}
                   {isProvider && b.status === 'Accepted' && (
-                    <button onClick={() => statusMutation.mutate({ id: b._id, status: 'Completed' })} className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold text-sm hover:bg-blue-700 transition">Mark as Completed</button>
+                    <button onClick={() => statusMutation.mutate({ id: b._id, status: 'Completed' })} className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold text-sm hover:bg-blue-700 transition">Mark Completed</button>
                   )}
 
                   {/* CUSTOMER ACTIONS */}
                   {isCustomer && (b.status === 'Pending' || b.status === 'Accepted') && (
-                    <button 
-                      onClick={() => { if(window.confirm('Cancel this booking?')) statusMutation.mutate({ id: b._id, status: 'Cancelled' })}} 
-                      className="w-full bg-red-100 text-red-600 border border-red-200 py-2 rounded-lg font-bold text-sm hover:bg-red-200 transition"
-                    >
-                      Cancel Booking
-                    </button>
-                  )}
-
-                  {/* NO ACTIONS FOR HISTORY TAB */}
-                  {(b.status === 'Completed' || b.status === 'Rejected' || b.status === 'Cancelled') && (
-                    <p className="w-full text-center text-gray-400 text-sm font-bold italic py-2">No further actions available.</p>
+                    <button onClick={() => { if(window.confirm('Cancel this booking?')) statusMutation.mutate({ id: b._id, status: 'Cancelled' })}} className="flex-1 bg-red-100 text-red-600 border border-red-200 py-2 rounded-lg font-bold text-sm hover:bg-red-200 transition">Cancel Booking</button>
                   )}
 
                 </div>
@@ -152,6 +161,16 @@ export default function BookingsPage() {
           )}
         </div>
       )}
+
+      {/* CHAT MODAL RENDER  */}
+      {isChatOpen && chatPartner && (
+        <ChatWindow 
+          receiverId={chatPartner.id} 
+          receiverName={chatPartner.name} 
+          onClose={() => setIsChatOpen(false)} 
+        />
+      )}
+
     </div>
   );
 }
