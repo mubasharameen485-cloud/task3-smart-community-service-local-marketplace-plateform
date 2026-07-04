@@ -4,23 +4,27 @@ import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { AuthContext } from '../../context/AuthContext';
-import { Search, Plus, Trash2, CalendarCheck, Clock, CheckCircle } from 'lucide-react';
+import { Search, Plus, Trash2, Star, X } from 'lucide-react';
 
 export default function ServicesPage() {
   const { user } = useContext(AuthContext);
   const queryClient = useQueryClient();
-  const { register, handleSubmit, reset } = useForm();
+  const { register, handleSubmit, reset } = useForm({ defaultValues: { availability: 'true' } });
   
-  // States
   const [showModal, setShowModal] = useState(false);
   const [images, setImages] = useState([]);
   const [filters, setFilters] = useState({ search: '', category: '' });
-  const [bookingModal, setBookingModal] = useState(null); 
+
+  const [bookingModal, setBookingModal] = useState(null);
   const [bookingData, setBookingData] = useState({ preferredDate: '', preferredTime: '', notes: '' });
+
+  // 🌟 SELLER REPUTATION STATES
+  const [sellerReviewsModal, setSellerReviewsModal] = useState(null);
+  const [sellerReviews, setSellerReviews] = useState([]);
+  const [sellerStats, setSellerStats] = useState({ avg: 0, total: 0 });
 
   const myId = user?.id || user?._id;
 
-  // 1. Fetch Services
   const { data: services = [], isLoading } = useQuery({
     queryKey: ['services', filters],
     queryFn: async () => {
@@ -30,99 +34,56 @@ export default function ServicesPage() {
     }
   });
 
-  // 2. Create Service Mutation
   const createMutation = useMutation({
     mutationFn: async (data) => {
       const formData = new FormData();
       Object.keys(data).forEach(key => formData.append(key, data[key]));
-      // Portfolio images ko FormData mein add karna
+      if (!data.availability) formData.append('availability', 'true');
       Array.from(images).forEach(file => formData.append('portfolioImages', file));
       
       const token = localStorage.getItem('token');
-      return await axios.post('http://localhost:5000/api/services', formData, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data' 
-        }
-      });
+      return await axios.post('http://localhost:5000/api/services', formData, { headers: { Authorization: `Bearer ${token}` } });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries(['services']);
-      setShowModal(false); reset(); setImages([]);
-      alert('✅ Service Published Locally!');
-    }
+    onSuccess: () => { queryClient.invalidateQueries(['services']); setShowModal(false); reset(); setImages([]); alert('Service Offered Successfully!'); }
   });
 
-  // 3. Delete Service Mutation
   const deleteMutation = useMutation({
-    mutationFn: async (id) => {
-      const token = localStorage.getItem('token');
-      return await axios.delete(`http://localhost:5000/api/services/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(['services']);
-      alert('🗑️ Service Removed.');
-    }
+    mutationFn: async (id) => await axios.delete(`http://localhost:5000/api/services/${id}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }),
+    onSuccess: () => { queryClient.invalidateQueries(['services']); alert('Service Deleted!'); }
   });
 
-  // 4. Booking Mutation
   const bookMutation = useMutation({
-    mutationFn: async (data) => {
-      const token = localStorage.getItem('token');
-      return await axios.post('http://localhost:5000/api/bookings', data, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-    },
-    onSuccess: () => {
-      setBookingModal(null);
-      setBookingData({ preferredDate: '', preferredTime: '', notes: '' });
-      alert('🎉 Booking Confirmed! Check the Bookings tab.');
-    },
-    onError: (err) => alert(err.response?.data?.message || 'Booking failed')
+    mutationFn: async (data) => await axios.post('http://localhost:5000/api/bookings', data, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }),
+    onSuccess: () => { setBookingModal(null); setBookingData({ preferredDate: '', preferredTime: '', notes: '' }); alert('✅ Service Booked Successfully!'); },
+    onError: (err) => alert(err.response?.data?.message || 'Error booking service')
   });
 
-  const handleBookSubmit = (e) => {
-    e.preventDefault();
-    if (!bookingModal) return;
-    bookMutation.mutate({ serviceId: bookingModal._id, ...bookingData });
+  const handleBookSubmit = (e) => { e.preventDefault(); bookMutation.mutate({ serviceId: bookingModal._id, ...bookingData }); };
+
+  // 🌟 FETCH REVIEWS FUNCTION
+  const fetchReviews = async (sellerObj) => {
+    try {
+      const res = await axios.get(`http://localhost:5000/api/reviews/${sellerObj._id}`);
+      setSellerReviews(res.data.data);
+      setSellerStats({ avg: res.data.sellerReputation, total: res.data.totalReviews });
+      setSellerReviewsModal(sellerObj);
+    } catch (err) {
+      alert("Error fetching reviews");
+    }
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-10 p-4 sm:p-8">
-      
-      {/* --- HEADER SECTION --- */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white dark:bg-gray-800 p-8 rounded-[40px] shadow-sm border border-gray-100 dark:border-gray-700 gap-6 transition-all">
-        <div className="space-y-1">
-          <h1 className="text-4xl font-black dark:text-white tracking-tighter uppercase italic">Professional Services</h1>
-          <p className="text-gray-500 dark:text-gray-400 font-medium">Explore and hire top-rated community experts.</p>
-        </div>
+    <div className="max-w-7xl mx-auto space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold dark:text-white">Local Services</h1>
         {(user?.role === 'SELLER' || user?.role === 'ADMIN') && (
-          <button 
-            onClick={() => setShowModal(true)} 
-            className="bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-green-100 dark:shadow-none flex items-center gap-3"
-          >
-            <Plus size={20} /> Offer New Service
-          </button>
+          <button onClick={() => setShowModal(true)} className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-700 transition"><Plus size={18} /> Offer Service</button>
         )}
       </div>
 
-      {/* --- FILTER BAR --- */}
-      <div className="flex gap-4 flex-wrap">
-        <div className="relative flex-1 min-w-[250px]">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-          <input 
-            type="text" 
-            placeholder="Search services by title..." 
-            onChange={(e) => setFilters({...filters, search: e.target.value})} 
-            className="w-full bg-white dark:bg-gray-800 border-none p-4 pl-12 rounded-2xl shadow-sm focus:ring-2 focus:ring-green-500 dark:text-white transition-all outline-none" 
-          />
-        </div>
-        <select 
-          onChange={(e) => setFilters({...filters, category: e.target.value})} 
-          className="bg-white dark:bg-gray-800 border-none p-4 rounded-2xl shadow-sm dark:text-white outline-none font-bold min-w-[200px]"
-        >
+      <div className="flex gap-4 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border dark:border-gray-700">
+        <input type="text" placeholder="Search services..." onChange={(e) => setFilters({...filters, search: e.target.value})} className="border p-2 rounded flex-1 dark:bg-gray-900 dark:border-gray-600 outline-none" />
+        <select onChange={(e) => setFilters({...filters, category: e.target.value})} className="border p-2 rounded dark:bg-gray-900 dark:border-gray-600 outline-none">
           <option value="">All Categories</option>
           <option value="Web Development">Web Development</option>
           <option value="Graphic Designing">Graphic Designing</option>
@@ -131,148 +92,142 @@ export default function ServicesPage() {
         </select>
       </div>
 
-      {/* --- SERVICES GRID --- */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {services.map(s => {
-          const providerId = s.provider?._id || s.provider;
-          const isOwner = String(providerId) === String(myId);
+      {isLoading ? <p className="text-center p-10 animate-pulse text-gray-500">Loading services...</p> : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {services.map(s => {
+            const providerId = s.provider?._id || s.provider;
+            const isOwner = String(providerId) === String(myId);
 
-          return (
-            <div key={s._id} className="bg-white dark:bg-gray-800 rounded-[35px] shadow-2xl overflow-hidden flex flex-col group hover:-translate-y-2 transition-all duration-300 border border-transparent hover:border-green-200 dark:hover:border-gray-600">
-              
-              {/* Image Preview */}
-              <div className="h-56 w-full bg-gray-100 dark:bg-gray-900 relative">
-                {s.portfolioImages?.[0] ? (
-                  <img src={s.portfolioImages[0]} className="w-full h-full object-cover group-hover:scale-110 transition duration-700" alt={s.title} />
-                ) : (
-                  <div className="flex items-center justify-center h-full text-gray-400 uppercase font-black text-[10px] tracking-widest italic">No Portfolio Preview</div>
-                )}
-                
-                {/* Category Badge */}
-                <div className="absolute top-4 left-4 bg-white/90 dark:bg-gray-800/90 backdrop-blur px-3 py-1.5 rounded-full border dark:border-gray-600">
-                   <span className="text-[10px] font-black text-green-700 dark:text-green-400 uppercase tracking-widest">{s.category}</span>
-                </div>
+            return (
+              <div key={s._id} className="bg-white dark:bg-gray-800 rounded-2xl shadow border dark:border-gray-700 p-6 space-y-4 relative hover:shadow-lg transition">
+                {isOwner && <button onClick={() => { if(window.confirm('Delete this service?')) deleteMutation.mutate(s._id); }} className="absolute top-4 right-4 bg-red-50 text-red-500 p-2 rounded-full hover:bg-red-100 transition"><Trash2 size={16} /></button>}
 
-                {/* Delete for Owners */}
-                {isOwner && (
-                  <button 
-                    onClick={() => { if(window.confirm('Delete service?')) deleteMutation.mutate(s._id); }} 
-                    className="absolute top-4 right-4 bg-red-500 hover:bg-red-600 text-white p-2.5 rounded-2xl shadow-xl transition-all"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
-              </div>
-
-              {/* Content */}
-              <div className="p-8 flex-1 flex flex-col gap-5">
-                <div className="flex justify-between items-start">
-                  <h3 className="font-black text-2xl text-gray-800 dark:text-white tracking-tighter uppercase italic leading-none">{s.title}</h3>
-                  <div className="text-right">
-                    <p className="text-[10px] font-black text-gray-400 uppercase">Pricing</p>
-                    <span className="text-2xl font-black text-green-600 tracking-tighter">${s.pricing}</span>
-                  </div>
+                <div className="flex justify-between items-start pt-2 pr-8">
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold">{s.category}</span>
+                  <span className="text-2xl font-black text-gray-800 dark:text-white">${s.pricing}</span>
                 </div>
                 
-                <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed">{s.description}</p>
+                <h3 className="font-bold text-xl">{s.title}</h3>
+                <p className="text-sm text-gray-500 line-clamp-2">{s.description}</p>
                 
-                {/* Provider Branding */}
-                <div className="flex items-center gap-3 py-4 border-t border-b dark:border-gray-700">
-                   <img src={s.provider?.profile?.profilePicture || 'https://via.placeholder.com/50'} className="w-10 h-10 rounded-full object-cover border-2 border-green-100 dark:border-gray-600 shadow-sm" />
-                   <div>
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Expert</p>
-                      <p className="text-sm font-black text-gray-700 dark:text-gray-200">{s.provider?.name} {isOwner && '(YOU)'}</p>
+                <div className="flex items-center justify-between pt-2 pb-2">
+                   <div className="flex items-center gap-2">
+                     <img src={s.provider?.profile?.profilePicture || 'https://via.placeholder.com/50'} className="w-8 h-8 rounded-full border border-gray-200" alt="Provider" />
+                     <span className="text-xs text-gray-500 font-bold">{s.provider?.name} {isOwner && '(You)'}</span>
                    </div>
+                   {/* 🌟 VIEW REVIEWS BUTTON */}
+                   <button onClick={() => fetchReviews(s.provider)} className="flex items-center gap-1 text-[10px] bg-yellow-50 text-yellow-700 border border-yellow-200 px-2 py-1 rounded-full font-bold hover:bg-yellow-100 transition">
+                     <Star size={12} className="fill-yellow-600 text-yellow-600"/> Reviews
+                   </button>
                 </div>
 
-                {/* Card Footer Actions */}
-                <div className="flex justify-between items-center mt-auto">
-                  <div className="flex items-center gap-2 text-gray-500">
-                    <Clock size={14} className="text-green-500" />
-                    <span className="text-[10px] font-black uppercase">{s.estimatedDeliveryTime}</span>
-                  </div>
-
-                  {!isOwner && user ? (
-                    <button 
-                      onClick={() => setBookingModal(s)} 
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase shadow-xl shadow-indigo-100 dark:shadow-none transition-all flex items-center gap-2"
-                    >
-                      <CalendarCheck size={14} /> Book Appointment
-                    </button>
-                  ) : isOwner ? (
-                    <div className="flex items-center gap-1 text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded-full border border-blue-100 dark:border-blue-800">
-                       <CheckCircle size={12} />
-                       <span className="text-[10px] font-black uppercase">Your Service</span>
-                    </div>
-                  ) : null}
+                <div className="flex justify-between items-center text-xs font-bold border-t dark:border-gray-700 pt-4">
+                  <span className="text-gray-400">Delivery: {s.estimatedDeliveryTime}</span>
+                  {!isOwner && user && s.availability ? (
+                    <button onClick={() => setBookingModal(s)} className="bg-indigo-600 text-white px-4 py-1.5 rounded-full hover:bg-indigo-700 shadow-sm transition">Book Now</button>
+                  ) : (
+                    <span className={`px-3 py-1 rounded-full ${s.availability ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>{s.availability ? 'Available' : 'Busy'}</span>
+                  )}
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
-      {/* --- MODAL: OFFER SERVICE --- */}
+      {/* 🌟 SELLER REVIEWS MODAL */}
+      {sellerReviewsModal && (
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-[100] p-4 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border dark:border-gray-800">
+            
+            <div className="bg-gray-50 dark:bg-gray-800 p-6 border-b dark:border-gray-700 flex justify-between items-start">
+              <div>
+                <h2 className="text-2xl font-black">{sellerReviewsModal.name}'s Reputation</h2>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-3xl font-black text-yellow-500">{sellerStats.avg}</span>
+                  <div className="flex text-yellow-400"><Star className="fill-yellow-400" size={20}/></div>
+                  <span className="text-sm text-gray-500 font-bold">({sellerStats.total} Reviews)</span>
+                </div>
+              </div>
+              <button onClick={() => setSellerReviewsModal(null)} className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full transition"><X size={24}/></button>
+            </div>
+
+            <div className="p-6 max-h-[400px] overflow-y-auto space-y-4">
+              {sellerReviews.length > 0 ? sellerReviews.map(rev => (
+                <div key={rev._id} className="border-b dark:border-gray-800 pb-4 last:border-0 last:pb-0">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2">
+                      <img src={rev.reviewer?.profile?.profilePicture || 'https://via.placeholder.com/40'} className="w-8 h-8 rounded-full" />
+                      <div>
+                        <p className="text-sm font-bold">{rev.reviewer?.name}</p>
+                        <p className="text-[10px] text-gray-400">{new Date(rev.createdAt).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-0.5 text-yellow-500">
+                      {[...Array(5)].map((_, i) => <Star key={i} size={14} className={i < rev.rating ? 'fill-yellow-500' : 'text-gray-300 dark:text-gray-700'} />)}
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 mt-3 bg-gray-50 dark:bg-gray-800 p-3 rounded-xl italic">"{rev.comment}"</p>
+                </div>
+              )) : (
+                <p className="text-center text-gray-500 italic py-10">No reviews yet for this provider.</p>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* CREATE MODAL */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex justify-center items-center z-[100] p-4">
-          <div className="bg-white dark:bg-gray-800 p-10 rounded-[45px] w-full max-w-xl shadow-2xl border dark:border-gray-700 animate-in fade-in zoom-in duration-300">
-            <h2 className="text-3xl font-black mb-8 dark:text-white uppercase tracking-tighter italic border-b pb-4">New Service Offer</h2>
-            <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-5">
-              <input {...register('title')} placeholder="Service Heading" required className="w-full border-none bg-gray-50 dark:bg-gray-900 p-4 rounded-2xl dark:text-white outline-none focus:ring-2 focus:ring-green-500 font-bold" />
-              <div className="grid grid-cols-2 gap-4">
-                <select {...register('category')} className="border-none bg-gray-50 dark:bg-gray-900 p-4 rounded-2xl dark:text-white outline-none font-bold">
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-lg border dark:border-gray-700 shadow-2xl">
+            <h2 className="text-2xl font-bold mb-4">Offer a Service</h2>
+            <form onSubmit={handleSubmit((d) => createMutation.mutate(d))} className="space-y-4">
+              <input {...register('title')} placeholder="Service Title" required className="w-full border p-2 rounded dark:bg-gray-900 outline-none" />
+              <div className="flex gap-4">
+                <select {...register('category')} className="w-1/2 border p-2 rounded dark:bg-gray-900 outline-none">
                   <option value="Web Development">Web Development</option>
                   <option value="Graphic Designing">Graphic Designing</option>
                   <option value="Photography">Photography</option>
                   <option value="Tutoring">Tutoring</option>
                 </select>
-                <input {...register('pricing')} type="number" placeholder="Fee $" required className="border-none bg-gray-50 dark:bg-gray-900 p-4 rounded-2xl dark:text-white outline-none font-bold" />
+                <input {...register('pricing')} type="number" placeholder="Price $" required className="w-1/2 border p-2 rounded dark:bg-gray-900 outline-none" />
               </div>
-              <input {...register('estimatedDeliveryTime')} placeholder="Delivery Days (e.g. 3 Days)" required className="w-full border-none bg-gray-50 dark:bg-gray-900 p-4 rounded-2xl dark:text-white outline-none font-bold" />
-              <textarea {...register('description')} rows="3" placeholder="Explain your professional service..." required className="w-full border-none bg-gray-50 dark:bg-gray-900 p-4 rounded-2xl dark:text-white outline-none font-bold"></textarea>
-              <div className="p-4 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-3xl">
-                <label className="text-[10px] font-black text-gray-400 uppercase ml-1 tracking-[0.2em] mb-2 block">Upload Portfolio</label>
-                <input type="file" multiple onChange={(e) => setImages(e.target.files)} className="w-full text-xs text-gray-500" />
+              <div className="flex gap-4">
+                <input {...register('estimatedDeliveryTime')} placeholder="Delivery Time (e.g. 3 Days)" required className="w-1/2 border p-2 rounded dark:bg-gray-900 outline-none" />
+                <select {...register('availability')} className="w-1/2 border p-2 rounded dark:bg-gray-900 outline-none">
+                  <option value="true">Available</option>
+                  <option value="false">Busy</option>
+                </select>
               </div>
-              <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-4 bg-gray-100 dark:bg-gray-700 rounded-2xl font-black uppercase text-xs transition hover:bg-gray-200 dark:text-white">Cancel</button>
-                <button type="submit" disabled={createMutation.isPending} className="flex-[2] py-4 bg-green-600 text-white rounded-2xl font-black uppercase text-xs shadow-xl shadow-green-100 hover:bg-green-700 transition-all">
-                  {createMutation.isPending ? 'OFFERING...' : 'CONFIRM & PUBLISH'}
-                </button>
+              <textarea {...register('description')} rows="3" placeholder="Description" required className="w-full border p-2 rounded dark:bg-gray-900 outline-none"></textarea>
+              <div>
+                <label className="text-xs font-bold text-gray-500">Portfolio Images</label>
+                <input type="file" multiple onChange={(e) => setImages(e.target.files)} className="w-full p-2 border rounded dark:bg-gray-900 outline-none" />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setShowModal(false)} className="w-1/2 bg-gray-200 dark:bg-gray-700 p-2 rounded font-bold hover:bg-gray-300 dark:hover:bg-gray-600 transition">Cancel</button>
+                <button type="submit" disabled={createMutation.isPending} className="w-1/2 bg-green-600 text-white p-2 rounded font-bold hover:bg-green-700 transition">{createMutation.isPending ? 'Saving...' : 'Offer Service'}</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* --- MODAL: CONFIRM BOOKING --- */}
+      {/* BOOKING MODAL */}
       {bookingModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex justify-center items-center z-[100] p-4">
-          <div className="bg-white dark:bg-gray-800 p-10 rounded-[45px] w-full max-w-md border dark:border-gray-700 shadow-2xl animate-in zoom-in duration-200">
-            <h2 className="text-3xl font-black mb-1 dark:text-white tracking-tighter uppercase italic">Secure Booking</h2>
-            <p className="text-indigo-600 dark:text-indigo-400 font-black mb-8 uppercase text-xs tracking-widest">
-               Service: {bookingModal.title}
-            </p>
-            
-            <form onSubmit={handleBookSubmit} className="space-y-5">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Select Date</label>
-                <input type="date" required value={bookingData.preferredDate} onChange={(e)=>setBookingData({...bookingData, preferredDate: e.target.value})} className="w-full bg-gray-50 dark:bg-gray-900 border-none p-4 rounded-2xl dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Select Time</label>
-                <input type="time" required value={bookingData.preferredTime} onChange={(e)=>setBookingData({...bookingData, preferredTime: e.target.value})} className="w-full bg-gray-50 dark:bg-gray-900 border-none p-4 rounded-2xl dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Additional Notes</label>
-                <textarea rows="3" value={bookingData.notes} onChange={(e)=>setBookingData({...bookingData, notes: e.target.value})} placeholder="Tell the provider your requirements..." className="w-full bg-gray-50 dark:bg-gray-900 border-none p-4 rounded-2xl dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold"></textarea>
-              </div>
-              
-              <div className="flex gap-4 pt-4 border-t dark:border-gray-700">
-                <button type="button" onClick={() => setBookingModal(null)} className="flex-1 py-4 bg-gray-50 dark:bg-gray-700 rounded-2xl font-black uppercase text-xs dark:text-white">Back</button>
-                <button type="submit" disabled={bookMutation.isPending} className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">
-                  {bookMutation.isPending ? 'PROCESSING...' : 'CONFIRM BOOKING'}
-                </button>
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-md border dark:border-gray-700 shadow-2xl">
+            <h2 className="text-2xl font-bold mb-2">Book Service</h2>
+            <p className="text-indigo-600 dark:text-indigo-400 font-bold mb-4 border-b dark:border-gray-700 pb-2">{bookingModal.title} - ${bookingModal.pricing}</p>
+            <form onSubmit={handleBookSubmit} className="space-y-4">
+              <div><label className="text-xs font-bold text-gray-500">Preferred Date</label><input type="date" required value={bookingData.preferredDate} onChange={(e)=>setBookingData({...bookingData, preferredDate: e.target.value})} className="w-full border p-2 rounded dark:bg-gray-900 outline-none focus:ring-2 focus:ring-indigo-500" /></div>
+              <div><label className="text-xs font-bold text-gray-500">Preferred Time</label><input type="time" required value={bookingData.preferredTime} onChange={(e)=>setBookingData({...bookingData, preferredTime: e.target.value})} className="w-full border p-2 rounded dark:bg-gray-900 outline-none focus:ring-2 focus:ring-indigo-500" /></div>
+              <div><label className="text-xs font-bold text-gray-500">Special Instructions / Notes</label><textarea rows="3" value={bookingData.notes} onChange={(e)=>setBookingData({...bookingData, notes: e.target.value})} placeholder="Any specific requirements?" className="w-full border p-2 rounded dark:bg-gray-900 outline-none focus:ring-2 focus:ring-indigo-500"></textarea></div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setBookingModal(null)} className="w-1/2 bg-gray-200 dark:bg-gray-700 p-2 rounded font-bold hover:bg-gray-300 dark:hover:bg-gray-600 transition">Cancel</button>
+                <button type="submit" disabled={bookMutation.isPending} className="w-1/2 bg-indigo-600 text-white p-2 rounded font-bold hover:bg-indigo-700 transition">{bookMutation.isPending ? 'Processing...' : 'Confirm Booking'}</button>
               </div>
             </form>
           </div>

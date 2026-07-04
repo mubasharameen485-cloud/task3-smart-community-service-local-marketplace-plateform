@@ -3,17 +3,21 @@ import { useContext, useState } from 'react';
 import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AuthContext } from '../../context/AuthContext';
-import { CalendarClock, CheckCircle, XCircle, History, Clock, MessageCircle } from 'lucide-react';
-import ChatWindow from '../../app/chat/ChatWindow'; 
+import { CalendarClock, CheckCircle, XCircle, History, Clock, MessageCircle, Star } from 'lucide-react';
+import ChatWindow from '../../app/chat/ChatWindow';
 
 export default function BookingsPage() {
   const { user } = useContext(AuthContext);
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('active'); // 'active' or 'history'
+  const [activeTab, setActiveTab] = useState('active');
 
-  //  CHAT STATES
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatPartner, setChatPartner] = useState(null);
+
+  // 🌟 REVIEW MODAL STATES
+  const [reviewModal, setReviewModal] = useState(null); // Provider Object
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
 
   const myId = user?.id || user?._id;
 
@@ -21,9 +25,7 @@ export default function BookingsPage() {
     queryKey: ['bookings'],
     queryFn: async () => {
       const token = localStorage.getItem('token');
-      const res = await axios.get('http://localhost:5000/api/bookings', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await axios.get('http://localhost:5000/api/bookings', { headers: { Authorization: `Bearer ${token}` } });
       return res.data.data;
     }
   });
@@ -31,36 +33,41 @@ export default function BookingsPage() {
   const statusMutation = useMutation({
     mutationFn: async ({ id, status }) => {
       const token = localStorage.getItem('token');
-      return await axios.patch(`http://localhost:5000/api/bookings/${id}/status`, { status }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      return await axios.patch(`http://localhost:5000/api/bookings/${id}/status`, { status }, { headers: { Authorization: `Bearer ${token}` } });
     },
     onSuccess: () => queryClient.invalidateQueries(['bookings'])
+  });
+
+  // 🌟 REVIEW MUTATION
+  const reviewMutation = useMutation({
+    mutationFn: async (data) => {
+      const token = localStorage.getItem('token');
+      return await axios.post('http://localhost:5000/api/reviews', data, { headers: { Authorization: `Bearer ${token}` } });
+    },
+    onSuccess: () => {
+      setReviewModal(null); setRating(5); setComment('');
+      alert('Review Submitted Successfully!');
+    },
+    onError: (err) => alert(err.response?.data?.message || 'Error submitting review')
   });
 
   if (!user) return <div className="p-10 text-center text-xl font-bold">Please login to view bookings.</div>;
 
   const displayedBookings = allBookings.filter(b => {
-    if (activeTab === 'active') {
-      return b.status === 'Pending' || b.status === 'Accepted';
-    } else {
-      return b.status === 'Completed' || b.status === 'Rejected' || b.status === 'Cancelled';
-    }
+    if (activeTab === 'active') return b.status === 'Pending' || b.status === 'Accepted';
+    else return b.status === 'Completed' || b.status === 'Rejected' || b.status === 'Cancelled';
   });
 
-  //  OPEN CHAT FUNCTION
   const handleOpenChat = (providerObj, customerObj) => {
-    // Agar current user Provider hai, toh partner Customer hoga
-    // Agar current user Customer hai, toh partner Provider hoga
     const isCurrentUserProvider = String(providerObj._id) === String(myId);
-    
-    if (isCurrentUserProvider) {
-      setChatPartner({ id: customerObj._id, name: customerObj.name });
-    } else {
-      setChatPartner({ id: providerObj._id, name: providerObj.name });
-    }
-    
+    if (isCurrentUserProvider) setChatPartner({ id: customerObj._id, name: customerObj.name });
+    else setChatPartner({ id: providerObj._id, name: providerObj.name });
     setIsChatOpen(true);
+  };
+
+  const submitReview = (e) => {
+    e.preventDefault();
+    reviewMutation.mutate({ sellerId: reviewModal._id, rating, comment });
   };
 
   return (
@@ -71,106 +78,94 @@ export default function BookingsPage() {
         </h1>
       </div>
 
-      {/* TABS SYSTEM */}
       <div className="flex gap-4">
-        <button 
-          onClick={() => setActiveTab('active')} 
-          className={`flex items-center gap-2 px-6 py-2 rounded-full font-bold transition ${activeTab === 'active' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-300'}`}
-        >
-          <Clock size={18} /> Active Bookings
-        </button>
-        <button 
-          onClick={() => setActiveTab('history')} 
-          className={`flex items-center gap-2 px-6 py-2 rounded-full font-bold transition ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-300'}`}
-        >
-          <History size={18} /> Booking History
-        </button>
+        <button onClick={() => setActiveTab('active')} className={`flex items-center gap-2 px-6 py-2 rounded-full font-bold transition ${activeTab === 'active' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-300'}`}><Clock size={18} /> Active Bookings</button>
+        <button onClick={() => setActiveTab('history')} className={`flex items-center gap-2 px-6 py-2 rounded-full font-bold transition ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-300'}`}><History size={18} /> Booking History</button>
       </div>
 
-      {/* BOOKINGS LIST */}
       {isLoading ? <p className="text-center p-10 animate-pulse text-gray-500">Loading your bookings...</p> : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
           {displayedBookings.map(b => {
             const providerId = b.provider?._id || b.provider;
             const customerId = b.customer?._id || b.customer;
-            
             const isProvider = String(providerId) === String(myId);
             const isCustomer = String(customerId) === String(myId);
             
-            const badgeColor = 
-              b.status === 'Accepted' ? 'bg-green-100 text-green-700' :
-              b.status === 'Completed' ? 'bg-blue-100 text-blue-700' :
-              b.status === 'Rejected' || b.status === 'Cancelled' ? 'bg-red-100 text-red-700' : 
-              'bg-yellow-100 text-yellow-700';
+            const badgeColor = b.status === 'Accepted' ? 'bg-green-100 text-green-700' : b.status === 'Completed' ? 'bg-blue-100 text-blue-700' : b.status === 'Rejected' || b.status === 'Cancelled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700';
 
             return (
               <div key={b._id} className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border dark:border-gray-700 space-y-4 relative">
-                
-                <span className={`absolute top-4 right-4 px-3 py-1 text-xs font-black uppercase rounded-full ${badgeColor}`}>
-                  {b.status}
-                </span>
-
+                <span className={`absolute top-4 right-4 px-3 py-1 text-xs font-black uppercase rounded-full ${badgeColor}`}>{b.status}</span>
                 <div>
-                  <h3 className="text-xl font-bold text-gray-800 dark:text-white pr-20">{b.service?.title || 'Unknown Service'}</h3>
+                  <h3 className="text-xl font-bold pr-20">{b.service?.title || 'Unknown Service'}</h3>
                   <p className="text-indigo-600 font-bold">${b.service?.pricing || 0} <span className="text-xs text-gray-500 font-normal">({b.service?.category || 'N/A'})</span></p>
                 </div>
-
                 <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl flex flex-col gap-2 text-sm border dark:border-gray-700">
                   <p><span className="font-bold text-gray-500">Date & Time:</span> {b.preferredDate} at {b.preferredTime}</p>
-                  
-                  {isProvider ? (
-                    <p><span className="font-bold text-gray-500">Requested By:</span> {b.customer?.name}</p>
-                  ) : (
-                    <p><span className="font-bold text-gray-500">Service Provider:</span> {b.provider?.name}</p>
-                  )}
-                  {b.notes && <p className="italic text-gray-600 dark:text-gray-400 mt-2">"{b.notes}"</p>}
+                  {isProvider ? <p><span className="font-bold text-gray-500">Requested By:</span> {b.customer?.name}</p> : <p><span className="font-bold text-gray-500">Service Provider:</span> {b.provider?.name}</p>}
                 </div>
 
-                <div className="flex gap-2 pt-2 border-t dark:border-gray-700">
-                  
-                  {/* CHAT BUTTON (Dono ko show hoga)  */}
-                  <button 
-                    onClick={() => handleOpenChat(b.provider, b.customer)} 
-                    className="flex-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 py-2 rounded-lg font-bold text-sm hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition flex justify-center items-center gap-1"
-                  >
-                    <MessageCircle size={16}/> Chat
-                  </button>
+                <div className="flex gap-2 pt-2 border-t dark:border-gray-700 flex-wrap">
+                  <button onClick={() => handleOpenChat(b.provider, b.customer)} className="flex-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 py-2 rounded-lg font-bold text-sm hover:bg-indigo-100 transition flex justify-center items-center gap-1"><MessageCircle size={16}/> Chat</button>
 
-                  {/* PROVIDER ACTIONS */}
                   {isProvider && b.status === 'Pending' && (
                     <>
-                      <button onClick={() => statusMutation.mutate({ id: b._id, status: 'Accepted' })} className="flex-1 bg-green-500 text-white py-2 rounded-lg font-bold text-sm hover:bg-green-600 transition flex justify-center items-center gap-1"><CheckCircle size={16}/> Accept</button>
-                      <button onClick={() => statusMutation.mutate({ id: b._id, status: 'Rejected' })} className="flex-1 bg-red-500 text-white py-2 rounded-lg font-bold text-sm hover:bg-red-600 transition flex justify-center items-center gap-1"><XCircle size={16}/> Reject</button>
+                      <button onClick={() => statusMutation.mutate({ id: b._id, status: 'Accepted' })} className="flex-1 bg-green-500 text-white py-2 rounded-lg font-bold text-sm hover:bg-green-600 transition">Accept</button>
+                      <button onClick={() => statusMutation.mutate({ id: b._id, status: 'Rejected' })} className="flex-1 bg-red-500 text-white py-2 rounded-lg font-bold text-sm hover:bg-red-600 transition">Reject</button>
                     </>
                   )}
-                  {isProvider && b.status === 'Accepted' && (
-                    <button onClick={() => statusMutation.mutate({ id: b._id, status: 'Completed' })} className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold text-sm hover:bg-blue-700 transition">Mark Completed</button>
+                  {isProvider && b.status === 'Accepted' && <button onClick={() => statusMutation.mutate({ id: b._id, status: 'Completed' })} className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold text-sm hover:bg-blue-700 transition">Mark Completed</button>}
+                  {isCustomer && (b.status === 'Pending' || b.status === 'Accepted') && <button onClick={() => { if(window.confirm('Cancel this booking?')) statusMutation.mutate({ id: b._id, status: 'Cancelled' })}} className="flex-1 bg-red-100 text-red-600 py-2 rounded-lg font-bold text-sm hover:bg-red-200 transition">Cancel</button>}
+                  
+                  {/* 🌟 REVIEW BUTTON (For Customer when Completed) */}
+                  {isCustomer && b.status === 'Completed' && (
+                    <button onClick={() => setReviewModal(b.provider)} className="flex-1 bg-yellow-400 text-yellow-900 py-2 rounded-lg font-bold text-sm hover:bg-yellow-500 transition flex justify-center items-center gap-1 shadow-md">
+                      <Star size={16} className="fill-yellow-900"/> Rate Provider
+                    </button>
                   )}
-
-                  {/* CUSTOMER ACTIONS */}
-                  {isCustomer && (b.status === 'Pending' || b.status === 'Accepted') && (
-                    <button onClick={() => { if(window.confirm('Cancel this booking?')) statusMutation.mutate({ id: b._id, status: 'Cancelled' })}} className="flex-1 bg-red-100 text-red-600 border border-red-200 py-2 rounded-lg font-bold text-sm hover:bg-red-200 transition">Cancel Booking</button>
-                  )}
-
                 </div>
               </div>
             );
           })}
-          {displayedBookings.length === 0 && (
-            <p className="col-span-2 text-center p-10 text-gray-500 italic">No {activeTab} bookings found.</p>
-          )}
         </div>
       )}
 
-      {/* CHAT MODAL RENDER  */}
-      {isChatOpen && chatPartner && (
-        <ChatWindow 
-          receiverId={chatPartner.id} 
-          receiverName={chatPartner.name} 
-          onClose={() => setIsChatOpen(false)} 
-        />
+      {/* 🌟 SUBMIT REVIEW MODAL */}
+      {reviewModal && (
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-[100] p-4">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm border dark:border-gray-700 shadow-2xl">
+            <h2 className="text-2xl font-bold mb-2">Rate Provider</h2>
+            <p className="text-sm text-gray-500 mb-4 border-b dark:border-gray-700 pb-2">How was your experience with {reviewModal.name}?</p>
+            
+            <form onSubmit={submitReview} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1 block">Rating (1 to 5 Stars)</label>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map(star => (
+                    <button type="button" key={star} onClick={() => setRating(star)} className={`p-2 rounded-full transition ${rating >= star ? 'bg-yellow-400 text-yellow-900' : 'bg-gray-200 dark:bg-gray-700 text-gray-400'}`}>
+                      <Star size={24} className={rating >= star ? 'fill-yellow-900' : ''} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-500 block mb-1">Your Feedback</label>
+                <textarea required rows="3" value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write your review here..." className="w-full border p-2 rounded dark:bg-gray-900 outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+              </div>
+              
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setReviewModal(null)} className="w-1/2 bg-gray-200 dark:bg-gray-700 p-2 rounded font-bold hover:bg-gray-300 dark:hover:bg-gray-600 transition">Cancel</button>
+                <button type="submit" disabled={reviewMutation.isPending} className="w-1/2 bg-yellow-400 text-yellow-900 p-2 rounded font-bold hover:bg-yellow-500 transition">
+                  {reviewMutation.isPending ? 'Submitting...' : 'Submit Review'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
+      {isChatOpen && chatPartner && <ChatWindow receiverId={chatPartner.id} receiverName={chatPartner.name} onClose={() => setIsChatOpen(false)} />}
     </div>
   );
 }
