@@ -4,8 +4,7 @@ import { useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { useTheme } from 'next-themes';
 import { Sun, Moon } from 'lucide-react';
-import NotificationDropdown from './NotificationDropdown'; // 🟢 ADDED NOTIFICATION
-
+import NotificationDropdown from './NotificationDropdown'; 
 export default function Navbar() {
   const { user, logoutUser } = useContext(AuthContext);
   const { theme, setTheme, systemTheme } = useTheme();
@@ -37,7 +36,7 @@ export default function Navbar() {
 
           {user ? (
             <>
-              {/* 🟢 NOTIFICATION BELL COMPONENT */}
+              
               <NotificationDropdown /> 
 
               <Link href="/profile" className="text-sm font-bold text-gray-700 dark:text-gray-200 hover:text-indigo-500 transition">

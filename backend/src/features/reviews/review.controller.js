@@ -1,6 +1,6 @@
 import Review from './review.model.js';
 import User from '../auth/auth.model.js';
-import { sendNotification } from '../notifications/notification.controller.js'; // 🟢 ADDED
+import { sendNotification } from '../notifications/notification.controller.js'; 
 
 export const submitReview = async (req, res) => {
     try {
@@ -18,7 +18,7 @@ export const submitReview = async (req, res) => {
 
         await User.findByIdAndUpdate(sellerId, { $set: { 'profile.averageRating': averageRating } });
 
-        // 🟢 NOTIFY SELLER
+        
         await sendNotification(req, sellerId, 'REVIEW', `Someone gave you a ${rating}-star review!`);
 
         res.status(201).json({ success: true, message: 'Review submitted successfully', data: newReview });

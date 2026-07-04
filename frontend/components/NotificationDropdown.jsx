@@ -25,10 +25,10 @@ export default function NotificationDropdown() {
     };
     fetchNotifs();
 
-    // 🟢 Join user's personal socket room
+    
     socket.emit('join_user_room', user.id || user._id);
 
-    // 🟢 Listen for real-time notifications
+    
     socket.on('new_notification', (newNotif) => {
       setNotifications((prev) => [newNotif, ...prev]);
     });

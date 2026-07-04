@@ -9,7 +9,7 @@ export const sendNotification = async (req, recipientId, type, message) => {
             io.to(String(recipientId)).emit('new_notification', notif); // Emit real-time!
         }
     } catch (error) {
-        console.error("❌ Error sending notification:", error);
+        console.error(" Error sending notification:", error);
     }
 };
 

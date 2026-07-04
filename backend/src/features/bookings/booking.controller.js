@@ -1,6 +1,6 @@
 import Booking from './booking.model.js';
 import Service from '../services/service.model.js';
-import { sendNotification } from '../notifications/notification.controller.js'; // 🟢 ADDED
+import { sendNotification } from '../notifications/notification.controller.js'; 
 
 export const createBooking = async (req, res) => {
     try {
@@ -15,7 +15,7 @@ export const createBooking = async (req, res) => {
             service: serviceId, provider: service.provider, customer: customerId, preferredDate, preferredTime, notes
         });
 
-        // 🟢 NOTIFY PROVIDER
+        
         await sendNotification(req, service.provider, 'BOOKING', `You have a new booking request for "${service.title}".`);
 
         res.status(201).json({ success: true, message: 'Booking requested successfully', data: newBooking });
@@ -52,7 +52,7 @@ export const updateBookingStatus = async (req, res) => {
         booking.status = status;
         await booking.save();
 
-        // 🟢 NOTIFY THE OTHER PARTY
+        
         const recipientId = isProvider ? booking.customer : booking.provider;
         await sendNotification(req, recipientId, 'BOOKING', `Booking status for "${booking.service.title}" updated to ${status}.`);
 
