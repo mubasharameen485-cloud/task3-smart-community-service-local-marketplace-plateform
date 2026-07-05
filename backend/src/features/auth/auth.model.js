@@ -5,6 +5,7 @@ const userSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     role: { type: String, enum: ['BUYER', 'SELLER', 'ADMIN'], default: 'BUYER' },
+    isSuspended: { type: Boolean, default: false },
     
     // Nested Profile Object (As requested in PDF)
     profile: {

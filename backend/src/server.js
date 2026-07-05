@@ -14,6 +14,8 @@ import bookingRoutes from './features/bookings/booking.routes.js';
 import chatRoutes from './features/chat/chat.routes.js';
 import reviewRoutes from './features/reviews/review.routes.js'; 
 import notificationRoutes from './features/notifications/notification.routes.js';
+import userRoutes from './features/users/user.routes.js';
+import adminRoutes from './features/admin/admin.routes.js';
 
 dotenv.config();
 const app = express();
@@ -57,5 +59,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/admin', adminRoutes);
 // Start Server
 server.listen(PORT, () => console.log(` Server running on port ${PORT}`));
