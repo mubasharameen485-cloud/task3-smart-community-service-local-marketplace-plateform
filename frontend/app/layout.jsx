@@ -6,6 +6,8 @@ import Footer from '../components/Footer';
 export const metadata = {
   title: 'Smart Community & Local Marketplace',
   description: 'Teyzix Core FSWD-3 Task',
+  manifest: '/manifest.json', 
+  themeColor: '#4f46e5',
 };
 
 export default function RootLayout({ children }) {

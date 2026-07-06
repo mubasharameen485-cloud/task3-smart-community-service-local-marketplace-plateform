@@ -3,8 +3,12 @@ import { useContext, useState } from 'react';
 import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AuthContext } from '../../context/AuthContext';
-import { CalendarClock, CheckCircle, XCircle, History, Clock, MessageCircle, Star } from 'lucide-react';
-import ChatWindow from '../../app/chat/ChatWindow';
+import { CalendarClock, CheckCircle, XCircle, History, Clock, MessageCircle, Star, FileText } from 'lucide-react';
+import ChatWindow from '../../app/bookings/page.jsx';
+
+
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function BookingsPage() {
   const { user } = useContext(AuthContext);
@@ -14,8 +18,7 @@ export default function BookingsPage() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatPartner, setChatPartner] = useState(null);
 
-  // 🌟 REVIEW MODAL STATES
-  const [reviewModal, setReviewModal] = useState(null); // Provider Object
+  const [reviewModal, setReviewModal] = useState(null);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
 
@@ -38,18 +41,64 @@ export default function BookingsPage() {
     onSuccess: () => queryClient.invalidateQueries(['bookings'])
   });
 
-  // 🌟 REVIEW MUTATION
   const reviewMutation = useMutation({
     mutationFn: async (data) => {
       const token = localStorage.getItem('token');
       return await axios.post('http://localhost:5000/api/reviews', data, { headers: { Authorization: `Bearer ${token}` } });
     },
-    onSuccess: () => {
-      setReviewModal(null); setRating(5); setComment('');
-      alert('Review Submitted Successfully!');
-    },
-    onError: (err) => alert(err.response?.data?.message || 'Error submitting review')
+    onSuccess: () => { setReviewModal(null); setRating(5); setComment(''); alert('Review Submitted!'); }
   });
+
+  
+  const generateInvoice = (booking) => {
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFontSize(24);
+    doc.setTextColor(79, 70, 229); // Indigo 600
+    doc.text('TEYZIX SMART COMMUNITY', 14, 20);
+    
+    doc.setFontSize(14);
+    doc.setTextColor(100, 100, 100);
+    doc.text('OFFICIAL INVOICE', 14, 30);
+    
+    // Invoice Details
+    doc.setFontSize(11);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Invoice No: INV-${booking._id.substring(0, 8).toUpperCase()}`, 14, 45);
+    doc.text(`Date Issued: ${new Date().toLocaleDateString()}`, 14, 52);
+    doc.text(`Booking Status: ${booking.status.toUpperCase()}`, 14, 59);
+
+    // AutoTable for Billing Details
+    autoTable(doc, {
+      startY: 70,
+      head: [['Service Provided', 'Provider Name', 'Customer Name', 'Amount']],
+      body: [
+        [
+          booking.service?.title || 'Service', 
+          booking.provider?.name || 'N/A', 
+          booking.customer?.name || 'N/A', 
+          `$${booking.service?.pricing || 0}`
+        ],
+      ],
+      headStyles: { fillColor: [79, 70, 229] },
+      theme: 'grid'
+    });
+
+    // Total Amount Highlight
+    const finalY = doc.lastAutoTable.finalY || 100;
+    doc.setFontSize(14);
+    doc.setTextColor(220, 38, 38); // Red color for Total
+    doc.text(`Total Paid: $${booking.service?.pricing || 0}`, 14, finalY + 15);
+
+    // Footer
+    doc.setFontSize(10);
+    doc.setTextColor(150, 150, 150);
+    doc.text('Thank you for using Teyzix Smart Community Marketplace!', 14, 280);
+
+    // Download PDF
+    doc.save(`Invoice_${booking._id.substring(0, 8)}.pdf`);
+  };
 
   if (!user) return <div className="p-10 text-center text-xl font-bold">Please login to view bookings.</div>;
 
@@ -59,8 +108,7 @@ export default function BookingsPage() {
   });
 
   const handleOpenChat = (providerObj, customerObj) => {
-    const isCurrentUserProvider = String(providerObj._id) === String(myId);
-    if (isCurrentUserProvider) setChatPartner({ id: customerObj._id, name: customerObj.name });
+    if (String(providerObj._id) === String(myId)) setChatPartner({ id: customerObj._id, name: customerObj.name });
     else setChatPartner({ id: providerObj._id, name: providerObj.name });
     setIsChatOpen(true);
   };
@@ -86,10 +134,8 @@ export default function BookingsPage() {
       {isLoading ? <p className="text-center p-10 animate-pulse text-gray-500">Loading your bookings...</p> : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
           {displayedBookings.map(b => {
-            const providerId = b.provider?._id || b.provider;
-            const customerId = b.customer?._id || b.customer;
-            const isProvider = String(providerId) === String(myId);
-            const isCustomer = String(customerId) === String(myId);
+            const isProvider = String(b.provider?._id || b.provider) === String(myId);
+            const isCustomer = String(b.customer?._id || b.customer) === String(myId);
             
             const badgeColor = b.status === 'Accepted' ? 'bg-green-100 text-green-700' : b.status === 'Completed' ? 'bg-blue-100 text-blue-700' : b.status === 'Rejected' || b.status === 'Cancelled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700';
 
@@ -108,6 +154,13 @@ export default function BookingsPage() {
                 <div className="flex gap-2 pt-2 border-t dark:border-gray-700 flex-wrap">
                   <button onClick={() => handleOpenChat(b.provider, b.customer)} className="flex-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 py-2 rounded-lg font-bold text-sm hover:bg-indigo-100 transition flex justify-center items-center gap-1"><MessageCircle size={16}/> Chat</button>
 
+                  {/* PDF INVOICE BUTTON (Visible when status is Completed) */}
+                  {b.status === 'Completed' && (
+                    <button onClick={() => generateInvoice(b)} className="flex-1 bg-gray-900 dark:bg-gray-700 text-white py-2 rounded-lg font-bold text-sm hover:bg-gray-800 transition flex justify-center items-center gap-1 shadow-md">
+                      <FileText size={16}/> Invoice
+                    </button>
+                  )}
+
                   {isProvider && b.status === 'Pending' && (
                     <>
                       <button onClick={() => statusMutation.mutate({ id: b._id, status: 'Accepted' })} className="flex-1 bg-green-500 text-white py-2 rounded-lg font-bold text-sm hover:bg-green-600 transition">Accept</button>
@@ -117,7 +170,6 @@ export default function BookingsPage() {
                   {isProvider && b.status === 'Accepted' && <button onClick={() => statusMutation.mutate({ id: b._id, status: 'Completed' })} className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold text-sm hover:bg-blue-700 transition">Mark Completed</button>}
                   {isCustomer && (b.status === 'Pending' || b.status === 'Accepted') && <button onClick={() => { if(window.confirm('Cancel this booking?')) statusMutation.mutate({ id: b._id, status: 'Cancelled' })}} className="flex-1 bg-red-100 text-red-600 py-2 rounded-lg font-bold text-sm hover:bg-red-200 transition">Cancel</button>}
                   
-                  {/* 🌟 REVIEW BUTTON (For Customer when Completed) */}
                   {isCustomer && b.status === 'Completed' && (
                     <button onClick={() => setReviewModal(b.provider)} className="flex-1 bg-yellow-400 text-yellow-900 py-2 rounded-lg font-bold text-sm hover:bg-yellow-500 transition flex justify-center items-center gap-1 shadow-md">
                       <Star size={16} className="fill-yellow-900"/> Rate Provider
@@ -130,35 +182,23 @@ export default function BookingsPage() {
         </div>
       )}
 
-      {/* 🌟 SUBMIT REVIEW MODAL */}
+      {/* REVIEW MODAL (remains same) */}
       {reviewModal && (
         <div className="fixed inset-0 bg-black/60 flex justify-center items-center z-[100] p-4">
           <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm border dark:border-gray-700 shadow-2xl">
             <h2 className="text-2xl font-bold mb-2">Rate Provider</h2>
-            <p className="text-sm text-gray-500 mb-4 border-b dark:border-gray-700 pb-2">How was your experience with {reviewModal.name}?</p>
-            
             <form onSubmit={submitReview} className="space-y-4">
-              <div>
-                <label className="text-xs font-bold text-gray-500 mb-1 block">Rating (1 to 5 Stars)</label>
-                <div className="flex gap-2">
-                  {[1, 2, 3, 4, 5].map(star => (
-                    <button type="button" key={star} onClick={() => setRating(star)} className={`p-2 rounded-full transition ${rating >= star ? 'bg-yellow-400 text-yellow-900' : 'bg-gray-200 dark:bg-gray-700 text-gray-400'}`}>
-                      <Star size={24} className={rating >= star ? 'fill-yellow-900' : ''} />
-                    </button>
-                  ))}
-                </div>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map(star => (
+                  <button type="button" key={star} onClick={() => setRating(star)} className={`p-2 rounded-full ${rating >= star ? 'bg-yellow-400 text-yellow-900' : 'bg-gray-200 dark:bg-gray-700 text-gray-400'}`}>
+                    <Star size={24} className={rating >= star ? 'fill-yellow-900' : ''} />
+                  </button>
+                ))}
               </div>
-
-              <div>
-                <label className="text-xs font-bold text-gray-500 block mb-1">Your Feedback</label>
-                <textarea required rows="3" value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write your review here..." className="w-full border p-2 rounded dark:bg-gray-900 outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
-              </div>
-              
+              <textarea required rows="3" value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Write your review here..." className="w-full border p-2 rounded dark:bg-gray-900 outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setReviewModal(null)} className="w-1/2 bg-gray-200 dark:bg-gray-700 p-2 rounded font-bold hover:bg-gray-300 dark:hover:bg-gray-600 transition">Cancel</button>
-                <button type="submit" disabled={reviewMutation.isPending} className="w-1/2 bg-yellow-400 text-yellow-900 p-2 rounded font-bold hover:bg-yellow-500 transition">
-                  {reviewMutation.isPending ? 'Submitting...' : 'Submit Review'}
-                </button>
+                <button type="button" onClick={() => setReviewModal(null)} className="w-1/2 bg-gray-200 p-2 rounded font-bold hover:bg-gray-300 text-gray-800">Cancel</button>
+                <button type="submit" className="w-1/2 bg-yellow-400 text-yellow-900 p-2 rounded font-bold hover:bg-yellow-500">Submit</button>
               </div>
             </form>
           </div>

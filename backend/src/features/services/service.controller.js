@@ -48,16 +48,39 @@ export const createService = async (req, res) => {
 
 export const getServices = async (req, res) => {
     try {
-        const { search, category } = req.query;
+        const { search, category, minPrice, maxPrice, location, rating, sort } = req.query;
         let query = {};
+
+       
         if (search) query.title = { $regex: search, $options: 'i' };
         if (category) query.category = category;
 
-        const services = await Service.find(query).populate('provider', 'name profile.profilePicture').sort({ createdAt: -1 });
+        
+        if (minPrice || maxPrice) {
+            query.pricing = {};
+            if (minPrice) query.pricing.$gte = Number(minPrice);
+            if (maxPrice) query.pricing.$lte = Number(maxPrice);
+        }
+
+        
+        const sortOption = sort === 'oldest' ? { createdAt: 1 } : { createdAt: -1 };
+
+        let services = await Service.find(query)
+            .populate('provider', 'name profile') 
+            .sort(sortOption);
+
+        
+        if (location) {
+            services = services.filter(s => s.provider?.profile?.location?.toLowerCase().includes(location.toLowerCase()));
+        }
+
+        
+        if (rating) {
+            services = services.filter(s => s.provider?.profile?.averageRating >= Number(rating));
+        }
+
         res.status(200).json({ success: true, data: services });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Server Error' });
-    }
+    } catch (error) { res.status(500).json({ success: false, message: 'Server Error' }); }
 };
 
 export const deleteService = async (req, res) => {
