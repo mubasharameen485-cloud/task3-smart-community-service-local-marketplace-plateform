@@ -48,6 +48,9 @@ export default function Login() {
       <p className="text-center text-sm text-gray-500 mt-4">
         Don't have an account? <Link href="/register" className="text-indigo-600 font-bold hover:underline">Register</Link>
       </p>
+      <p className="text-center text-sm text-gray-500 mt-4">
+        forget email? <Link href="/forget" className="text-indigo-600 font-bold hover:underline">forget email</Link>
+      </p>
     </div>
   );
 }

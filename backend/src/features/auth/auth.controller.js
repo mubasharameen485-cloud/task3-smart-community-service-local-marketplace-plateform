@@ -1,7 +1,9 @@
 import User from './auth.model.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto'; // 🟢 Zaroori import
 import cloudinary from '../../config/cloudinary.js';
+import { sendEmailNotification } from '../../config/email.js';
 
 export const register = async (req, res) => {
     try {
@@ -14,6 +16,9 @@ export const register = async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
         const newUser = await User.create({ name, email, password: hashedPassword, role: role || 'BUYER' });
 
+        // Email Alert
+        await sendEmailNotification(email, 'Welcome to Smart Community!', `Hi ${name},\n\nWelcome to Teyzix Smart Community! Your account has been created successfully.`);
+
         res.status(201).json({ success: true, message: 'Registered successfully', data: { id: newUser._id, name, email, role: newUser.role } });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
@@ -24,82 +29,83 @@ export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
         const user = await User.findOne({ email });
+        
         if (!user || !(await bcrypt.compare(password, user.password))) {
             return res.status(401).json({ success: false, message: 'Invalid email or password' });
         }
-        if(user.isSuspended) return res.status(403).json({message: "Account Suspended"});
+        
+        if (user.isSuspended) {
+            return res.status(403).json({ success: false, message: 'Your account is suspended.' });
+        }
 
         const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
-        
-        // Remove password before sending
         user.password = undefined;
         res.status(200).json({ success: true, token, user });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Server error' });
     }
 };
-// Upload Helper
-const streamUpload = (fileBuffer) => {
-    return new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-            { 
-                folder: 'teyzix_fs3_profiles',
-                resource_type: "auto"
-            },
-            (error, result) => {
-                if (error) reject(error);
-                else resolve(result);
-            }
-        );
-        stream.end(fileBuffer);
-    });
-};
 
-export const updateProfile = async (req, res) => {
+export const forgotPassword = async (req, res) => {
     try {
-        const userId = req.user.id;
-        const { name, bio, contactInformation, location, skills } = req.body;
-        
-        const user = await User.findById(userId);
+        const { email } = req.body;
+        const user = await User.findOne({ email });
         if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-        if (name) user.name = name;
-        if (!user.profile) user.profile = {};
-        if (bio !== undefined) user.profile.bio = bio;
-        if (contactInformation !== undefined) user.profile.contactInformation = contactInformation;
-        if (location !== undefined) user.profile.location = location;
-        
-        if (skills) {
-            user.profile.skills = typeof skills === 'string' ? skills.split(',') : skills;
-        }
-
-        // --- LOCAL IMAGE UPLOAD LOGIC ---
-        if (req.file) {
-            // Hum image ka URL aise banayenge: http://localhost:5000/uploads/filename.jpg
-            const baseUrl = `${req.protocol}://${req.get('host')}`;
-            user.profile.profilePicture = `${baseUrl}/uploads/${req.file.filename}`;
-            
-            /* CLOUDINARY CODE (KEEPING FOR LATER)
-            const result = await streamUpload(req.file.buffer);
-            user.profile.profilePicture = result.secure_url;
-            */
-        }
-
-        user.markModified('profile');
+        const resetToken = crypto.randomBytes(20).toString('hex');
+        user.resetPasswordToken = resetToken;
+        user.resetPasswordExpire = Date.now() + 15 * 60 * 1000; // 15 mins expiry
         await user.save();
-        
-        user.password = undefined;
-        res.status(200).json({ success: true, message: 'Profile updated locally', user });
 
+        const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+        const message = `You requested a password reset.\n\nClick here to reset your password: ${resetUrl}\n\nThis link is valid for 15 minutes.`;
+
+        await sendEmailNotification(user.email, 'Password Reset Request', message);
+
+        res.status(200).json({ success: true, message: 'Reset email sent successfully' });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Error', error: error.message });
+        res.status(500).json({ success: false, message: 'Error sending email' });
     }
 };
-export const getMyProfile = async (req, res) => {
+
+export const resetPassword = async (req, res) => {
     try {
-        const user = await User.findById(req.user.id).select('-password');
-        res.status(200).json({ success: true, user });
+        const { token } = req.params;
+        const { password } = req.body;
+
+        const user = await User.findOne({
+            resetPasswordToken: token,
+            resetPasswordExpire: { $gt: Date.now() }
+        });
+
+        if (!user) return res.status(400).json({ success: false, message: 'Invalid or expired reset token' });
+
+        user.password = await bcrypt.hash(password, 10);
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpire = undefined;
+        await user.save();
+
+        res.status(200).json({ success: true, message: 'Password has been reset successfully. You can now login.' });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Error fetching profile' });
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+    export const updateProfile = async (req, res) => {
+    try {
+        const { name } = req.body;
+        const userId = req.user.id;
+
+        let updateData = {};
+        if (name) updateData.name = name;
+
+        if (req.file) {
+            updateData['profile.profilePicture'] = await uploadWithFallback(req.file, 'teyzix_users');
+        }
+
+        const updatedUser = await User.findByIdAndUpdate(userId, updateData, { new: true }).select('-password');
+        res.status(200).json({ success: true, data: updatedUser });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Server error in updating profile' });
     }
 };
+};
+

@@ -4,7 +4,7 @@ import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AuthContext } from '../../context/AuthContext';
 import { CalendarClock, CheckCircle, XCircle, History, Clock, MessageCircle, Star, FileText } from 'lucide-react';
-import ChatWindow from '../../app/bookings/page.jsx';
+import ChatWindow from '../chat/ChatWindow';
 
 
 import jsPDF from 'jspdf';
